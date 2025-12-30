@@ -1,0 +1,105 @@
+import streamlit as st
+import google.generativeai as genai
+import matplotlib.pyplot as plt
+
+# --- CONFIGURACIÓN DE LA PÁGINA ---
+st.set_page_config(page_title="Davo Math Academy ⚽", layout="wide")
+
+# El "Cerebro" de Davo: Instrucciones de personalidad
+SYSTEM_PROMPT = """
+Actúa como Davo Xeneize nivel 10 (Termo total). Tu misión es enseñar fracciones a un chico de 13 años.
+REGLAS DE ORO:
+1. Hablá como streamer argentino: usá "boludo", "fiera", "una locura", "pará un poco".
+2. Si el usuario entiende o acierta, escribí al final: [ESTADO: GOL].
+3. Si el usuario falla o dice una burrada, escribí al final: [ESTADO: ERROR].
+4. Siempre que expliques una fracción, escribila exactamente así: [F: numerador/denominador] para que yo pueda dibujarla.
+5. Todo se explica con fútbol: el numerador son los goles, el denominador son los partidos o pedazos de pizza en la previa.
+6. No des la respuesta rápido, hacelo pensar como si estuviera en una charla técnica.
+"""
+
+# --- CONEXIÓN SEGURA CON LA LLAVE (API KEY) ---
+try:
+    # Esto busca la llave que pegaste en "Secrets" de Streamlit
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error("⚠️ ¡Falta la API Key! Avisale al Arquitecto que no pusiste la llave en Secrets.")
+
+# --- FUNCIÓN PARA DIBUJAR LA PIZZA DE FRACCIONES ---
+def dibujar_fraccion(n, d):
+    fig, ax = plt.subplots(figsize=(3, 3))
+    if d <= 0: d = 1 # Evitar errores matemáticos
+    data = [1] * d
+    colors = ['#3b4252'] * d # Color gris (vacío)
+    for i in range(min(n, d)):
+        colors[i] = '#fbbf24' # Color Oro/Amarillo (ocupado)
+    
+    ax.pie(data, colors=colors, startangle=90, wedgeprops={"edgecolor":"white"})
+    ax.set_title(f"Táctica del día: {n}/{d}", color="white", fontsize=12)
+    fig.patch.set_facecolor('#0e1117') # Fondo oscuro como el stream
+    return fig
+
+# --- INTERFAZ VISUAL (LO QUE VE EL PIBE) ---
+st.title("⚽ DAVO XENEIZE: CLASE DE FRACCIONES O MUERTE")
+st.write("---")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# Dividimos la pantalla en dos: Video/Pizarra y Chat
+col1, col2 = st.columns([1, 1])
+
+with col1:
+    st.subheader("📺 Streaming en Vivo")
+    
+    # Lógica para cambiar el GIF de Davo según el humor
+    imagen_url = "https://media.tenor.com/uR1kS1v-NfQAAAAC/davo-xeneize-davo.gif" # Normal
+    if st.session_state.chat_history:
+        ultima_respuesta = st.session_state.chat_history[-1]["content"]
+        if "[ESTADO: GOL]" in ultima_respuesta:
+            imagen_url = "https://media.tenor.com/9O0Z-oV_H0AAAAAd/davo-boca.gif" # Festejo
+        elif "[ESTADO: ERROR]" in ultima_respuesta:
+            imagen_url = "https://media.tenor.com/F_V9p6fP8m8AAAAC/davo-davo-xeneize.gif" # Enojado
+    
+    st.image(imagen_url, use_container_width=True)
+    
+    # Espacio para la pizarra táctica
+    st.write("---")
+    st.subheader("📋 Pizarra Táctica de Román")
+    if st.session_state.chat_history:
+        ultima_respuesta = st.session_state.chat_history[-1]["content"]
+        if "[F:" in ultima_respuesta:
+            try:
+                # Extraemos los números para dibujar
+                parte = ultima_respuesta.split("[F:")[1].split("]")[0].strip()
+                num, den = map(int, parte.split("/"))
+                st.pyplot(dibujar_fraccion(num, den))
+            except:
+                st.write("Davo: '¡No me pidas dibujos raros, flaco!'")
+
+with col2:
+    st.subheader("💬 Chat con Davo")
+    # Mostrar mensajes anteriores
+    for mensaje in st.session_state.chat_history:
+        with st.chat_message(mensaje["role"]):
+            st.markdown(mensaje["content"].replace("[ESTADO: GOL]", "⚽🔥").replace("[ESTADO: ERROR]", "🤌❌"))
+
+    # Entrada de texto para el chico
+    if pregunta := st.chat_input("¿Qué duda tenés, fiera?"):
+        st.session_state.chat_history.append({"role": "user", "content": pregunta})
+        with st.chat_message("user"):
+            st.markdown(pregunta)
+        
+        # Respuesta de la IA con la personalidad de Davo
+        with st.spinner("Davo está pensando (y tomando un mate)..."):
+            contexto = "\n".join([m["content"] for m in st.session_state.chat_history[-3:]])
+            full_input = f"{SYSTEM_PROMPT}\nHistorial reciente: {contexto}\nPregunta actual: {pregunta}"
+            
+            response = model.generate_content(full_input)
+            respuesta_davo = response.text
+            
+            with st.chat_message("assistant"):
+                st.markdown(respuesta_davo.replace("[ESTADO: GOL]", "⚽🔥").replace("[ESTADO: ERROR]", "🤌❌"))
+            
+            st.session_state.chat_history.append({"role": "assistant", "content": respuesta_davo})
+            st.rerun()
